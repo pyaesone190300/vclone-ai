@@ -1,0 +1,19 @@
+services:
+  - type: worker
+    name: telegram-myvoice-bot
+    runtime: docker
+
+    dockerfilePath: ./Dockerfile
+
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+
+      - key: MODEL_PATH
+        value: /app/models/MyVoice.pth
+
+      - key: INDEX_PATH
+        value: /app/models/MyVoice.index
+
+      - key: TTS_VOICE
+        value: my-MM-ThihaNeural
