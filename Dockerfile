@@ -20,7 +20,6 @@ RUN git clone \
 
 WORKDIR /app/RVC
 
-# Official PyPI / PyTorch CPU indexes
 RUN sed -i \
     's#https://mirrors.pku.edu.cn/pypi/simple#https://pypi.org/simple#g' \
     requirments_cpu_py312.txt
@@ -42,11 +41,31 @@ COPY requirements.txt .
 RUN pip install \
     -r requirements.txt
 
-COPY bot.py .
-
-COPY models ./models
-
+# Model folder
+RUN mkdir -p /app/models
 RUN mkdir -p /app/work
+
+# Download models from Google Drive
+ARG MODEL_FILE_ID
+ARG INDEX_FILE_ID
+
+RUN if [ -n "$MODEL_FILE_ID" ]; then \
+        gdown "$MODEL_FILE_ID" \
+        -O /app/models/MyVoice.pth; \
+    else \
+        echo "MODEL_FILE_ID is not set"; \
+        exit 1; \
+    fi
+
+RUN if [ -n "$INDEX_FILE_ID" ]; then \
+        gdown "$INDEX_FILE_ID" \
+        -O /app/models/MyVoice.index; \
+    else \
+        echo "INDEX_FILE_ID is not set"; \
+        exit 1; \
+    fi
+
+COPY bot.py .
 
 ENV MODEL_PATH=/app/models/MyVoice.pth
 ENV INDEX_PATH=/app/models/MyVoice.index
