@@ -15,10 +15,6 @@ from telegram.ext import (
     filters,
 )
 
-# =========================
-# CONFIG
-# =========================
-
 BOT_TOKEN = os.environ["BOT_TOKEN"]
 
 MODEL_PATH = os.getenv(
@@ -42,24 +38,15 @@ WORK_DIR.mkdir(parents=True, exist_ok=True)
 RVC_DIR = "/app/RVC"
 
 
-# =========================
-# /start
-# =========================
-
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "မင်္ဂလာပါ 👋\n\n"
         "စာသားပို့ပါ။\n"
-        "စာသားကို MyVoice အသံနဲ့ MP3 ပြန်ပေးပါမယ်။"
+        "MyVoice အသံနဲ့ 320kbps MP3 ပြန်ပေးပါမယ်။"
     )
 
 
-# =========================
-# TTS
-# =========================
-
 async def text_to_speech(text: str, output_file: str):
-
     communicate = edge_tts.Communicate(
         text=text,
         voice=TTS_VOICE,
@@ -71,12 +58,35 @@ async def text_to_speech(text: str, output_file: str):
     await communicate.save(output_file)
 
 
-# =========================
-# RVC
-# =========================
+def convert_to_wav(input_file: str, output_file: str):
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_file,
+        "-ar",
+        "40000",
+        "-ac",
+        "1",
+        "-sample_fmt",
+        "s16",
+        output_file,
+    ]
+
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            "WAV conversion failed:\n\n" + result.stdout
+        )
+
 
 def run_rvc(input_file: str, output_file: str):
-
     cmd = [
         "python",
         f"{RVC_DIR}/infer/cli.py",
@@ -121,12 +131,7 @@ def run_rvc(input_file: str, output_file: str):
         )
 
 
-# =========================
-# CONVERT TO MP3
-# =========================
-
 def convert_to_mp3(input_file: str, output_file: str):
-
     cmd = [
         "ffmpeg",
         "-y",
@@ -152,15 +157,10 @@ def convert_to_mp3(input_file: str, output_file: str):
         )
 
 
-# =========================
-# TEXT HANDLER
-# =========================
-
 async def text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
-
     if not update.message or not update.message.text:
         return
 
@@ -169,67 +169,55 @@ async def text_handler(
     if not text:
         return
 
-    # Telegram command မဟုတ်ရင်ပဲ process
     if text.startswith("/"):
         return
 
     job_id = uuid.uuid4().hex
 
     tts_mp3 = WORK_DIR / f"{job_id}_tts.mp3"
+    tts_wav = WORK_DIR / f"{job_id}_tts.wav"
     rvc_wav = WORK_DIR / f"{job_id}_rvc.wav"
     final_mp3 = WORK_DIR / f"{job_id}_MyVoice.mp3"
 
     try:
-
         await update.message.chat.send_action(
             action=ChatAction.RECORD_VOICE
         )
 
         status = await update.message.reply_text(
-            "⏳ စာသားကို MyVoice အသံပြောင်းနေပါတယ်..."
+            "⏳ MyVoice အသံထုတ်နေပါတယ်..."
         )
 
-        # -------------------------
-        # STEP 1
-        # Text → TTS
-        # -------------------------
-
+        # TTS
         await text_to_speech(
             text,
             str(tts_mp3)
         )
 
-        # -------------------------
-        # STEP 2
-        # TTS → RVC
-        # -------------------------
+        # MP3 -> WAV
+        await asyncio.to_thread(
+            convert_to_wav,
+            str(tts_mp3),
+            str(tts_wav)
+        )
 
+        # RVC
         await asyncio.to_thread(
             run_rvc,
-            str(tts_mp3),
+            str(tts_wav),
             str(rvc_wav)
         )
 
-        # -------------------------
-        # STEP 3
-        # WAV → MP3
-        # -------------------------
-
+        # WAV -> 320kbps MP3
         await asyncio.to_thread(
             convert_to_mp3,
             str(rvc_wav),
             str(final_mp3)
         )
 
-        # -------------------------
-        # STEP 4
-        # Send MP3
-        # -------------------------
-
         await status.delete()
 
         with open(final_mp3, "rb") as audio:
-
             await update.message.reply_audio(
                 audio=audio,
                 filename="MyVoice.mp3",
@@ -238,35 +226,27 @@ async def text_handler(
             )
 
     except Exception as e:
-
         print("ERROR:", e)
 
         await update.message.reply_text(
             "❌ အသံထုတ်ရာမှာ Error ဖြစ်ပါတယ်။\n\n"
-            f"{str(e)[:1000]}"
+            f"{str(e)[:1500]}"
         )
 
     finally:
-
-        # Cleanup
         for file in [
             tts_mp3,
+            tts_wav,
             rvc_wav,
             final_mp3,
         ]:
-
             try:
                 file.unlink(missing_ok=True)
             except Exception:
                 pass
 
 
-# =========================
-# MAIN
-# =========================
-
 def main():
-
     app = (
         Application
         .builder()
