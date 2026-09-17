@@ -1,6 +1,6 @@
-pyrogram
-tgcrypto
-gTTS
-torch
-librosa
-soundfile
+#pyrogram
+#tgcrypto
+#gTTS
+#torch
+#librosa
+#soundfile
