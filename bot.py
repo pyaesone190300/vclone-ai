@@ -8,7 +8,7 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 
 # Render Environment Variables မှ ရယူခြင်း
-API_ID = int(os.environ.get("API_ID", 8815202255))
+API_ID = int(os.environ.get("API_ID", 21294516))
 API_HASH = os.environ.get("API_HASH", "3e90489f675513c3679dd08e8c2b2bb3")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8815202255:AAEBqUONp13NtR4t5raRsOufoKpi8DS9CQo")
 
