@@ -39,7 +39,7 @@ WORKDIR /app/RVC
 
 
 # ============================================================
-# PYTHON PACKAGE INDEX FIX
+# FIX PYPI MIRRORS
 # ============================================================
 
 RUN sed -i \
@@ -52,7 +52,7 @@ RUN sed -i \
 
 
 # ============================================================
-# PYTHON / PIP
+# PIP
 # ============================================================
 
 RUN python -m pip install --upgrade \
@@ -62,7 +62,7 @@ RUN python -m pip install --upgrade \
 
 
 # ============================================================
-# INSTALL RVC DEPENDENCIES
+# RVC DEPENDENCIES
 # ============================================================
 
 RUN python -m pip install \
@@ -70,24 +70,30 @@ RUN python -m pip install \
 
 
 # ============================================================
-# HUGGING FACE DOWNLOAD TOOL
+# HUGGINGFACE HUB
+#
+# IMPORTANT:
+# RVC requires huggingface-hub < 1.0
 # ============================================================
 
 RUN python -m pip install \
-    --upgrade \
-    huggingface_hub
+    "huggingface_hub>=0.26.0,<1.0"
 
 
 # ============================================================
-# DOWNLOAD RVC HU BERT MODEL
-#
-# Required by:
-# /app/RVC/assets/hubert_base
+# VERIFY HUGGINGFACE VERSION
+# ============================================================
+
+RUN python -c "import huggingface_hub; print('huggingface_hub:', huggingface_hub.__version__)"
+
+
+# ============================================================
+# DOWNLOAD HUBERT
 # ============================================================
 
 RUN mkdir -p /app/RVC/assets
 
-RUN hf download \
+RUN huggingface-cli download \
     lj1995/VoiceConversionWebUI \
     --revision main \
     --include "hubert_base/*" \
@@ -95,15 +101,12 @@ RUN hf download \
 
 
 # ============================================================
-# DOWNLOAD RMVPE MODEL
-#
-# Required by:
-# /app/RVC/assets/rmvpe/rmvpe.pt
+# DOWNLOAD RMVPE
 # ============================================================
 
 RUN mkdir -p /app/RVC/assets/rmvpe
 
-RUN hf download \
+RUN huggingface-cli download \
     lj1995/VoiceConversionWebUI \
     rmvpe.pt \
     --revision main \
@@ -111,7 +114,7 @@ RUN hf download \
 
 
 # ============================================================
-# VERIFY HU BERT
+# VERIFY HUBERT
 # ============================================================
 
 RUN test -f /app/RVC/assets/hubert_base/config.json
@@ -157,8 +160,6 @@ RUN mkdir -p /app/work
 
 # ============================================================
 # GOOGLE DRIVE FILE IDs
-#
-# Render provides these as build arguments.
 # ============================================================
 
 ARG MODEL_FILE_ID
@@ -170,7 +171,9 @@ ARG INDEX_FILE_ID
 # ============================================================
 
 RUN if [ -n "$MODEL_FILE_ID" ]; then \
-        echo "Downloading MyVoice.pth..." && \
+        echo "========================================"; \
+        echo "Downloading MyVoice.pth"; \
+        echo "========================================"; \
         gdown "$MODEL_FILE_ID" \
         -O /app/models/MyVoice.pth; \
     else \
@@ -184,7 +187,9 @@ RUN if [ -n "$MODEL_FILE_ID" ]; then \
 # ============================================================
 
 RUN if [ -n "$INDEX_FILE_ID" ]; then \
-        echo "Downloading MyVoice.index..." && \
+        echo "========================================"; \
+        echo "Downloading MyVoice.index"; \
+        echo "========================================"; \
         gdown "$INDEX_FILE_ID" \
         -O /app/models/MyVoice.index; \
     else \
@@ -203,25 +208,39 @@ RUN test -f /app/models/MyVoice.index
 
 
 # ============================================================
-# SHOW MODEL FILES
+# SHOW FILES
 # ============================================================
+
+RUN echo "========================================"
+
+RUN echo "MyVoice model files:"
 
 RUN ls -lh /app/models/
 
+RUN echo "========================================"
+
+RUN echo "HuBERT files:"
+
 RUN ls -lh /app/RVC/assets/hubert_base/
+
+RUN echo "========================================"
+
+RUN echo "RMVPE files:"
 
 RUN ls -lh /app/RVC/assets/rmvpe/
 
+RUN echo "========================================"
+
 
 # ============================================================
-# COPY TELEGRAM BOT
+# COPY BOT
 # ============================================================
 
 COPY bot.py /app/bot.py
 
 
 # ============================================================
-# ENVIRONMENT
+# ENVIRONMENT VARIABLES
 # ============================================================
 
 ENV MODEL_PATH=/app/models/MyVoice.pth
@@ -232,7 +251,7 @@ ENV TTS_VOICE=my-MM-ThihaNeural
 
 
 # ============================================================
-# START BOT
+# START TELEGRAM BOT
 # ============================================================
 
 CMD ["python", "/app/bot.py"]
