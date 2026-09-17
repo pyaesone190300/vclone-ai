@@ -6,3 +6,4 @@
 #soundfile
 python-telegram-bot==22.5
 edge-tts==7.2.8
+gdown==5.2.0
