@@ -2,6 +2,7 @@ FROM python:3.12-slim
 
 ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app/RVC
 
 RUN apt-get update && apt-get install -y \
     git \
@@ -13,7 +14,6 @@ RUN apt-get update && apt-get install -y \
 
 WORKDIR /app
 
-# RVC
 RUN git clone \
     https://github.com/RVC-Project/Retrieval-based-Voice-Conversion-WebUI.git \
     /app/RVC
@@ -41,11 +41,9 @@ COPY requirements.txt .
 RUN pip install \
     -r requirements.txt
 
-# Model folder
 RUN mkdir -p /app/models
 RUN mkdir -p /app/work
 
-# Download models from Google Drive
 ARG MODEL_FILE_ID
 ARG INDEX_FILE_ID
 
