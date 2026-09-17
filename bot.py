@@ -8,9 +8,9 @@ from pyrogram import Client, filters
 from pyrogram.types import Message
 
 # Render Environment Variables မှ ရယူခြင်း
-API_ID = int(os.environ.get("API_ID", 12345678))
-API_HASH = os.environ.get("API_HASH", "")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+API_ID = int(os.environ.get("API_ID", 8815202255))
+API_HASH = os.environ.get("API_HASH", "3e90489f675513c3679dd08e8c2b2bb3")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8815202255:AAEBqUONp13NtR4t5raRsOufoKpi8DS9CQo")
 
 app = Client("myanmar_voice_clone_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
