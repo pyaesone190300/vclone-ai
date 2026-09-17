@@ -1,89 +1,296 @@
-import os
 import asyncio
-import torch
-import librosa
-import soundfile as sf
-from gtts import gTTS
-from pyrogram import Client, filters
-from pyrogram.types import Message
+import os
+import subprocess
+import uuid
+from pathlib import Path
 
-# Render Environment Variables မှ ရယူခြင်း
-API_ID = int(os.environ.get("API_ID", 21294516))
-API_HASH = os.environ.get("API_HASH", "3e90489f675513c3679dd08e8c2b2bb3")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8815202255:AAEBqUONp13NtR4t5raRsOufoKpi8DS9CQo")
+import edge_tts
+from telegram import Update
+from telegram.constants import ChatAction
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    ContextTypes,
+    MessageHandler,
+    filters,
+)
 
-app = Client("myanmar_voice_clone_bot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# =========================
+# CONFIG
+# =========================
 
-user_voices = {}
+BOT_TOKEN = os.environ["BOT_TOKEN"]
 
-@app.on_message(filters.command("start") & filters.private)
-async def start_cmd(client: Client, message: Message):
-    await message.reply_text(
-        "👋 **မင်္ဂလာပါ။ မြန်မာစာ Voice Cloning Bot မှ ကြိုဆိုပါတယ်။**\n\n"
-        "၁။ Clone လုပ်ချင်သော **အသံဖိုင် (Voice Note/MP3)** ကို ပို့ပေးပါ။\n"
-        "၂။ ထို့နောက် ပြောစေချင်သည့် **မြန်မာစာ** ကို ရိုက်ပို့ပေးပါ။"
+MODEL_PATH = os.getenv(
+    "MODEL_PATH",
+    "/app/models/MyVoice.pth"
+)
+
+INDEX_PATH = os.getenv(
+    "INDEX_PATH",
+    "/app/models/MyVoice.index"
+)
+
+TTS_VOICE = os.getenv(
+    "TTS_VOICE",
+    "my-MM-ThihaNeural"
+)
+
+WORK_DIR = Path("/app/work")
+WORK_DIR.mkdir(parents=True, exist_ok=True)
+
+RVC_DIR = "/app/RVC"
+
+
+# =========================
+# /start
+# =========================
+
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "မင်္ဂလာပါ 👋\n\n"
+        "စာသားပို့ပါ။\n"
+        "စာသားကို MyVoice အသံနဲ့ MP3 ပြန်ပေးပါမယ်။"
     )
 
-@app.on_message((filters.voice | filters.audio) & filters.private)
-async def handle_audio(client: Client, message: Message):
-    status_msg = await message.reply_text("📥 အသံဖိုင်ကို ပြင်ဆင်နေပါသည်...")
-    
-    user_id = message.from_user.id
-    ref_file_path = f"ref_{user_id}.wav"
-    
-    if os.path.exists(ref_file_path):
-        os.remove(ref_file_path)
 
-    downloaded_file = await message.download(file_name=ref_file_path)
-    
-    y, sr = librosa.load(downloaded_file, sr=16000)
-    sf.write(ref_file_path, y, sr)
-    
-    user_voices[user_id] = ref_file_path
-    await status_msg.edit_text("✅ **အသံဖိုင် မှတ်သားပြီးပါပြီ!** ယခု မြန်မာစာ ရိုက်ပို့နိုင်ပါပြီ။")
+# =========================
+# TTS
+# =========================
 
-def convert_voice(base_myanmar_audio: str, reference_audio: str, output_path: str):
-    y_base, sr = librosa.load(base_myanmar_audio, sr=16000)
-    y_ref, _ = librosa.load(reference_audio, sr=16000)
-    
-    pitch_ref = librosa.feature.chroma_stft(y=y_ref, sr=sr)
-    pitch_base = librosa.feature.chroma_stft(y=y_base, sr=sr)
-    
-    n_steps = float((pitch_ref.mean() - pitch_base.mean()) * 10)
-    y_shifted = librosa.effects.pitch_shift(y=y_base, sr=sr, n_steps=n_steps)
-    sf.write(output_path, y_shifted, sr)
+async def text_to_speech(text: str, output_file: str):
 
-@app.on_message(filters.text & filters.private)
-async def process_myanmar_tts(client: Client, message: Message):
-    user_id = message.from_user.id
-    
-    if user_id not in user_voices or not os.path.exists(user_voices[user_id]):
-        await message.reply_text("⚠️ ကျေးဇူးပြု၍ စာမပို့မီ အသံဖိုင်ကို အရင် ပို့ပေးပါ။")
+    communicate = edge_tts.Communicate(
+        text=text,
+        voice=TTS_VOICE,
+        rate="+0%",
+        volume="+0%",
+        pitch="+0Hz",
+    )
+
+    await communicate.save(output_file)
+
+
+# =========================
+# RVC
+# =========================
+
+def run_rvc(input_file: str, output_file: str):
+
+    cmd = [
+        "python",
+        f"{RVC_DIR}/infer/cli.py",
+
+        "--model",
+        MODEL_PATH,
+
+        "--input",
+        input_file,
+
+        "--output",
+        output_file,
+
+        "--index",
+        INDEX_PATH,
+
+        "--pitch",
+        "0",
+
+        "--f0-method",
+        "rmvpe",
+
+        "--index-rate",
+        "0.75",
+
+        "--protect",
+        "0.33",
+
+        "--overwrite",
+    ]
+
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            "RVC failed:\n\n" + result.stdout
+        )
+
+
+# =========================
+# CONVERT TO MP3
+# =========================
+
+def convert_to_mp3(input_file: str, output_file: str):
+
+    cmd = [
+        "ffmpeg",
+        "-y",
+        "-i",
+        input_file,
+        "-codec:a",
+        "libmp3lame",
+        "-b:a",
+        "320k",
+        output_file,
+    ]
+
+    result = subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+
+    if result.returncode != 0:
+        raise RuntimeError(
+            "MP3 conversion failed:\n\n" + result.stdout
+        )
+
+
+# =========================
+# TEXT HANDLER
+# =========================
+
+async def text_handler(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE
+):
+
+    if not update.message or not update.message.text:
         return
 
-    status_msg = await message.reply_text("⏳ Voice Clone ပြုလုပ်နေပါသည်...")
-    text_input = message.text
-    ref_audio = user_voices[user_id]
-    
-    temp_base_audio = f"base_{user_id}.mp3"
-    output_audio = f"voice_{user_id}_{message.id}.wav"
+    text = update.message.text.strip()
+
+    if not text:
+        return
+
+    # Telegram command မဟုတ်ရင်ပဲ process
+    if text.startswith("/"):
+        return
+
+    job_id = uuid.uuid4().hex
+
+    tts_mp3 = WORK_DIR / f"{job_id}_tts.mp3"
+    rvc_wav = WORK_DIR / f"{job_id}_rvc.wav"
+    final_mp3 = WORK_DIR / f"{job_id}_MyVoice.mp3"
 
     try:
-        loop = asyncio.get_running_loop()
-        await loop.run_in_executor(None, lambda: gTTS(text=text_input, lang='my', slow=False).save(temp_base_audio))
-        await loop.run_in_executor(None, lambda: convert_voice(temp_base_audio, ref_audio, output_audio))
 
-        await message.reply_voice(voice=output_audio, caption=f"🗣 **Text:** {text_input[:50]}...")
-        await status_msg.delete()
+        await update.message.chat.send_action(
+            action=ChatAction.RECORD_VOICE
+        )
+
+        status = await update.message.reply_text(
+            "⏳ စာသားကို MyVoice အသံပြောင်းနေပါတယ်..."
+        )
+
+        # -------------------------
+        # STEP 1
+        # Text → TTS
+        # -------------------------
+
+        await text_to_speech(
+            text,
+            str(tts_mp3)
+        )
+
+        # -------------------------
+        # STEP 2
+        # TTS → RVC
+        # -------------------------
+
+        await asyncio.to_thread(
+            run_rvc,
+            str(tts_mp3),
+            str(rvc_wav)
+        )
+
+        # -------------------------
+        # STEP 3
+        # WAV → MP3
+        # -------------------------
+
+        await asyncio.to_thread(
+            convert_to_mp3,
+            str(rvc_wav),
+            str(final_mp3)
+        )
+
+        # -------------------------
+        # STEP 4
+        # Send MP3
+        # -------------------------
+
+        await status.delete()
+
+        with open(final_mp3, "rb") as audio:
+
+            await update.message.reply_audio(
+                audio=audio,
+                filename="MyVoice.mp3",
+                title="MyVoice",
+                performer="MyVoice",
+            )
 
     except Exception as e:
-        await status_msg.edit_text(f"❌ Error: {str(e)}")
+
+        print("ERROR:", e)
+
+        await update.message.reply_text(
+            "❌ အသံထုတ်ရာမှာ Error ဖြစ်ပါတယ်။\n\n"
+            f"{str(e)[:1000]}"
+        )
 
     finally:
-        for temp_file in [temp_base_audio, output_audio]:
-            if os.path.exists(temp_file):
-                os.remove(temp_file)
+
+        # Cleanup
+        for file in [
+            tts_mp3,
+            rvc_wav,
+            final_mp3,
+        ]:
+
+            try:
+                file.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+
+# =========================
+# MAIN
+# =========================
+
+def main():
+
+    app = (
+        Application
+        .builder()
+        .token(BOT_TOKEN)
+        .build()
+    )
+
+    app.add_handler(
+        CommandHandler("start", start)
+    )
+
+    app.add_handler(
+        MessageHandler(
+            filters.TEXT & ~filters.COMMAND,
+            text_handler
+        )
+    )
+
+    print("MyVoice Telegram Bot started.")
+
+    app.run_polling(
+        drop_pending_updates=True
+    )
+
 
 if __name__ == "__main__":
-    print("Render Web Service/Worker - Bot Started")
-    app.run()
+    main()
