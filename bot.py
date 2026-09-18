@@ -53,7 +53,7 @@ WORK_DIR.mkdir(
 # ============================================================
 
 # Female voice pitch
-PITCH = 12
+PITCH = 8
 
 # F0 extraction
 F0_METHOD = "rmvpe"
