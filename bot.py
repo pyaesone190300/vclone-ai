@@ -42,7 +42,30 @@ RVC_DIR = "/app/RVC"
 
 # Work directory
 WORK_DIR = Path("/app/work")
-WORK_DIR.mkdir(parents=True, exist_ok=True)
+WORK_DIR.mkdir(
+    parents=True,
+    exist_ok=True
+)
+
+
+# ============================================================
+# RVC SETTINGS
+# ============================================================
+
+# Female voice pitch
+PITCH = 12
+
+# F0 extraction
+F0_METHOD = "rmvpe"
+
+# Index influence
+INDEX_RATE = 0.75
+
+# Protect consonants
+PROTECT = 0.33
+
+# Single-speaker model
+SPEAKER_ID = 0
 
 
 # ============================================================
@@ -62,7 +85,7 @@ async def start(
 
 
 # ============================================================
-# TTS
+# TEXT -> TTS
 # ============================================================
 
 async def text_to_speech(
@@ -77,7 +100,9 @@ async def text_to_speech(
         pitch="+0Hz",
     )
 
-    await communicate.save(output_file)
+    await communicate.save(
+        output_file
+    )
 
 
 # ============================================================
@@ -91,6 +116,7 @@ def convert_to_wav(
     cmd = [
         "ffmpeg",
         "-y",
+
         "-i",
         input_file,
 
@@ -121,7 +147,7 @@ def convert_to_wav(
 
 
 # ============================================================
-# RVC
+# RVC INFERENCE
 # ============================================================
 
 def run_rvc(
@@ -130,8 +156,7 @@ def run_rvc(
 ):
     env = os.environ.copy()
 
-    # IMPORTANT:
-    # Allows RVC to find the "infer" Python module.
+    # Allow RVC to find "infer"
     env["PYTHONPATH"] = RVC_DIR
 
     cmd = [
@@ -139,36 +164,87 @@ def run_rvc(
 
         "/app/RVC/infer/cli.py",
 
+        # ----------------------------------------------------
+        # Model
+        # ----------------------------------------------------
+
         "--model",
         MODEL_PATH,
+
+        # ----------------------------------------------------
+        # Input
+        # ----------------------------------------------------
 
         "--input",
         input_file,
 
+        # ----------------------------------------------------
+        # Output
+        # ----------------------------------------------------
+
         "--output",
         output_file,
+
+        # ----------------------------------------------------
+        # Index
+        # ----------------------------------------------------
 
         "--index",
         INDEX_PATH,
 
-        # Voice pitch
+        # ----------------------------------------------------
+        # FEMALE VOICE PITCH
+        # ----------------------------------------------------
+
         "--pitch",
-        "0",
+        str(PITCH),
 
-        # Female MyVoice model
+        # ----------------------------------------------------
+        # F0 METHOD
+        # ----------------------------------------------------
+
         "--f0-method",
-        "rmvpe",
+        F0_METHOD,
 
-        # Index influence
+        # ----------------------------------------------------
+        # INDEX RATE
+        # ----------------------------------------------------
+
         "--index-rate",
-        "0.75",
+        str(INDEX_RATE),
 
-        # Protect consonants
+        # ----------------------------------------------------
+        # PROTECT
+        # ----------------------------------------------------
+
         "--protect",
-        "0.33",
+        str(PROTECT),
+
+        # ----------------------------------------------------
+        # SPEAKER
+        # ----------------------------------------------------
+
+        "--speaker-id",
+        str(SPEAKER_ID),
+
+        # ----------------------------------------------------
+        # OVERWRITE
+        # ----------------------------------------------------
 
         "--overwrite",
     ]
+
+    print("========================================")
+    print("RVC SETTINGS")
+    print("========================================")
+    print(f"Model       : {MODEL_PATH}")
+    print(f"Index       : {INDEX_PATH}")
+    print(f"Pitch       : +{PITCH}")
+    print(f"F0 method   : {F0_METHOD}")
+    print(f"Index rate  : {INDEX_RATE}")
+    print(f"Protect     : {PROTECT}")
+    print(f"Speaker ID  : {SPEAKER_ID}")
+    print("========================================")
 
     result = subprocess.run(
         cmd,
@@ -178,8 +254,6 @@ def run_rvc(
 
         text=True,
 
-        # IMPORTANT:
-        # Run from RVC directory.
         cwd=RVC_DIR,
 
         env=env,
@@ -242,6 +316,7 @@ async def text_handler(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE
 ):
+
     if not update.message:
         return
 
@@ -257,6 +332,7 @@ async def text_handler(
     if text.startswith("/"):
         return
 
+    # Unique job ID
     job_id = uuid.uuid4().hex
 
     tts_mp3 = (
@@ -310,9 +386,7 @@ async def text_handler(
 
         await asyncio.to_thread(
             convert_to_wav,
-
             str(tts_mp3),
-
             str(tts_wav),
         )
 
@@ -322,9 +396,7 @@ async def text_handler(
 
         await asyncio.to_thread(
             run_rvc,
-
             str(tts_wav),
-
             str(rvc_wav),
         )
 
@@ -334,9 +406,7 @@ async def text_handler(
 
         await asyncio.to_thread(
             convert_to_mp3,
-
             str(rvc_wav),
-
             str(final_mp3),
         )
 
@@ -361,11 +431,8 @@ async def text_handler(
 
             await update.message.reply_audio(
                 audio=audio,
-
                 filename="MyVoice.mp3",
-
                 title="MyVoice",
-
                 performer="MyVoice",
             )
 
@@ -373,6 +440,7 @@ async def text_handler(
 
         print("================================")
         print("BOT ERROR")
+        print("================================")
         print(e)
         print("================================")
 
@@ -390,7 +458,7 @@ async def text_handler(
     finally:
 
         # ----------------------------------------------------
-        # Delete temporary files
+        # Cleanup temporary files
         # ----------------------------------------------------
 
         for file in [
@@ -429,7 +497,7 @@ def main():
         )
     )
 
-    # Normal text
+    # Text messages
     app.add_handler(
         MessageHandler(
             filters.TEXT
@@ -447,19 +515,35 @@ def main():
     )
 
     print(
-        f"Model : {MODEL_PATH}"
+        f"Model      : {MODEL_PATH}"
     )
 
     print(
-        f"Index : {INDEX_PATH}"
+        f"Index      : {INDEX_PATH}"
     )
 
     print(
-        f"TTS   : {TTS_VOICE}"
+        f"TTS        : {TTS_VOICE}"
     )
 
     print(
-        "Output: 320kbps MP3"
+        f"Pitch      : +{PITCH}"
+    )
+
+    print(
+        f"F0         : {F0_METHOD}"
+    )
+
+    print(
+        f"Index Rate : {INDEX_RATE}"
+    )
+
+    print(
+        f"Protect    : {PROTECT}"
+    )
+
+    print(
+        "Output     : 320kbps MP3"
     )
 
     print(
